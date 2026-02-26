@@ -4,6 +4,34 @@ import { SHEET_TABS } from '@/types';
 import { createCrudService, NotFoundError } from './crud.service';
 import { maskEmail, maskPhone } from '@/lib/security';
 
+/**
+ * Create an income record when a registration/check-in has a payment.
+ */
+async function createIncomeFromPayment(opts: {
+  eventName: string;
+  amount: string;
+  payerName: string;
+  paymentMethod: string;
+  source: 'registration' | 'checkin';
+}) {
+  const total = parseFloat(opts.amount || '0');
+  if (total <= 0) return;
+
+  const now = new Date().toISOString();
+  await appendRow(SHEET_TABS.INCOME, {
+    id: generateId(),
+    incomeType: 'Event',
+    eventName: opts.eventName,
+    amount: total,
+    date: now.split('T')[0],
+    paymentMethod: opts.paymentMethod || '',
+    payerName: opts.payerName,
+    notes: `Auto-created from ${opts.source}`,
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 // ========================================
 // Event Services
 // ========================================
@@ -322,6 +350,16 @@ export async function register(
   };
 
   await appendRow(SHEET_TABS.EVENT_REGISTRATIONS, record);
+
+  // Create income record if payment was made
+  await createIncomeFromPayment({
+    eventName: event.record.name,
+    amount: data.totalPrice,
+    payerName: data.name,
+    paymentMethod: data.paymentMethod,
+    source: 'registration',
+  });
+
   return record;
 }
 
@@ -398,6 +436,16 @@ export async function checkin(
   };
 
   await appendRow(SHEET_TABS.EVENT_CHECKINS, record);
+
+  // Create income record if payment was made
+  await createIncomeFromPayment({
+    eventName: event.record.name,
+    amount: data.totalPrice,
+    payerName: data.name,
+    paymentMethod: data.paymentMethod,
+    source: 'checkin',
+  });
+
   return record;
 }
 
