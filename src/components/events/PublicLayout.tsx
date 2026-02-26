@@ -12,7 +12,7 @@ export default function PublicLayout({ eventName, children }: PublicLayoutProps)
       <div className="bg-white/80 backdrop-blur-sm border-b border-gray-200">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
           <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center flex-shrink-0">
-            <span className="text-white font-bold text-xs">NT</span>
+            <span className="text-white font-bold text-xs">MO</span>
           </div>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900 truncate">
