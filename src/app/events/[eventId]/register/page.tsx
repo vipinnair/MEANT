@@ -7,6 +7,7 @@ import PriceDisplay from '@/components/events/PriceDisplay';
 import PaymentForm from '@/components/events/PaymentForm';
 import ActivitySelector from '@/components/events/ActivitySelector';
 import StatusBadge from '@/components/ui/StatusBadge';
+import ProfileReviewStep from '@/components/events/ProfileReviewStep';
 import { parsePricingRules, calculatePrice, calculateActivityPrice } from '@/lib/pricing';
 import { parseFormConfig, parseActivities, parseActivityPricingMode, parseGuestPolicy } from '@/lib/event-config';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
@@ -16,11 +17,12 @@ import { HiOutlineCheckCircle, HiOutlineHeart, HiOutlineExclamationTriangle, HiC
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
-type Step = 'loading' | 'identify' | 'membership_offer' | 'already_registered' | 'wizard' | 'payment' | 'submitting' | 'success' | 'error';
-type WizardStep = 'contact' | 'attendees' | 'activities' | 'review';
+type Step = 'loading' | 'identify' | 'membership_offer' | 'membership_expired' | 'already_registered' | 'wizard' | 'payment' | 'submitting' | 'success' | 'error';
+type WizardStep = 'contact' | 'profile_review' | 'attendees' | 'activities' | 'review';
 
 const WIZARD_LABELS: Record<WizardStep, string> = {
   contact: 'Contact',
+  profile_review: 'Profile',
   attendees: 'Attendees',
   activities: 'Activities',
   review: 'Review',
@@ -43,10 +45,14 @@ interface LookupResult {
   name?: string;
   email?: string;
   phone?: string;
+  address?: string;
+  spouseName?: string;
+  spouseEmail?: string;
+  spousePhone?: string;
+  children?: string;
   city?: string;
   referredBy?: string;
   memberStatus?: string;
-  siblingEventRegCount?: number;
   guestPolicy?: GuestPolicy;
   registrationData?: RegistrationData;
 }
@@ -67,7 +73,6 @@ export default function RegisterPage() {
   const [pricingRules, setPricingRules] = useState<PricingRules | null>(null);
   const [priceBreakdown, setPriceBreakdown] = useState<PriceBreakdown | null>(null);
   const [regType, setRegType] = useState<'Member' | 'Guest'>('Guest');
-  const [siblingEventRegCount, setSiblingEventRegCount] = useState(0);
 
   const [formFields, setFormFields] = useState<FormFieldConfig[]>([]);
   const [eventActivities, setEventActivities] = useState<ActivityConfig[]>([]);
@@ -90,6 +95,18 @@ export default function RegisterPage() {
   const [originalPaidAmount, setOriginalPaidAmount] = useState(0);
 
   const [feeSettings, setFeeSettings] = useState<FeeSettings | null>(null);
+  const [membershipCost, setMembershipCost] = useState(0);
+  const [isRenewing, setIsRenewing] = useState(false);
+
+  const [memberProfile, setMemberProfile] = useState<{
+    phone: string;
+    address: string;
+    spouseName: string;
+    spouseEmail: string;
+    spousePhone: string;
+    children: { name: string; age: string }[];
+  } | null>(null);
+  const [profileChanged, setProfileChanged] = useState(false);
 
   const [form, setForm] = useState({
     name: '',
@@ -104,11 +121,14 @@ export default function RegisterPage() {
   const wizardSteps = useMemo<WizardStep[]>(() => {
     const steps: WizardStep[] = [];
     if (regType === 'Guest') steps.push('contact');
+    if (regType === 'Member') steps.push('profile_review');
     steps.push('attendees');
-    if (eventActivities.length > 0) steps.push('activities');
+    const showActivities = eventActivities.length > 0 &&
+      (regType === 'Member' || guestPolicy?.allowGuestActivities !== false);
+    if (showActivities) steps.push('activities');
     steps.push('review');
     return steps;
-  }, [regType, eventActivities.length]);
+  }, [regType, eventActivities.length, guestPolicy?.allowGuestActivities]);
 
   // Fetch fee settings
   useEffect(() => {
@@ -118,6 +138,9 @@ export default function RegisterPage() {
         const json = await res.json();
         if (json.success && json.data?.feeSettings) {
           setFeeSettings(json.data.feeSettings);
+        }
+        if (json.success && json.data?.membershipSettings) {
+          setMembershipCost(json.data.membershipSettings.yearlyCost || 0);
         }
       } catch {
         // Fee settings are optional
@@ -141,8 +164,22 @@ export default function RegisterPage() {
           setActPricingMode(parseActivityPricingMode(json.data.activityPricingMode || ''));
           setGuestPolicy(parseGuestPolicy(json.data.guestPolicy || ''));
 
+          if (json.data.date) {
+            const today = new Date().toISOString().split('T')[0];
+            if (today > json.data.date) {
+              setErrorMsg('This event has ended.');
+              setStep('error');
+              return;
+            }
+          }
+
           if (json.data.status !== 'Upcoming') {
             setErrorMsg('This event is not open for registration.');
+            setStep('error');
+            return;
+          }
+          if (json.data.registrationOpen !== undefined && json.data.registrationOpen !== '' && json.data.registrationOpen !== 'true') {
+            setErrorMsg('Registration is currently closed for this event.');
             setStep('error');
             return;
           }
@@ -171,7 +208,7 @@ export default function RegisterPage() {
         adults,
         freeKids,
         paidKids,
-        otherSubEventCount: siblingEventRegCount,
+        otherSubEventCount: 0,
       });
       const validRegs = activityRegistrations.filter((r) => r.activityId);
       if (eventActivities.length > 0 && validRegs.length > 0) {
@@ -181,7 +218,7 @@ export default function RegisterPage() {
     } else {
       setPriceBreakdown(null);
     }
-  }, [pricingRules, regType, adults, freeKids, paidKids, siblingEventRegCount, eventActivities, activityRegistrations, actPricingMode]);
+  }, [pricingRules, regType, adults, freeKids, paidKids, eventActivities, activityRegistrations, actPricingMode]);
 
   const handleLookup = async () => {
     const emailErr = validateEmailRequired(lookupEmail);
@@ -198,7 +235,6 @@ export default function RegisterPage() {
 
       const data = json.data as LookupResult;
       setLookupResult(data);
-      setSiblingEventRegCount(data.siblingEventRegCount || 0);
       if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
 
       if (data.status === 'already_checked_in') {
@@ -245,6 +281,14 @@ export default function RegisterPage() {
         // Set reg type based on member/guest status
         if (data.status === 'member_active' || data.status === 'member_expired') {
           setRegType('Member');
+          setMemberProfile({
+            phone: data.phone || '',
+            address: data.address || '',
+            spouseName: data.spouseName || '',
+            spouseEmail: data.spouseEmail || '',
+            spousePhone: data.spousePhone || '',
+            children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
+          });
         } else {
           setRegType('Guest');
         }
@@ -252,7 +296,7 @@ export default function RegisterPage() {
         return;
       }
 
-      if (data.status === 'member_active' || data.status === 'member_expired') {
+      if (data.status === 'member_active') {
         setRegType('Member');
         setForm((f) => ({
           ...f,
@@ -260,8 +304,35 @@ export default function RegisterPage() {
           email: data.email || lookupEmail.trim(),
           phone: data.phone || '',
         }));
-        setWizardStep('attendees');
+        setMemberProfile({
+          phone: data.phone || '',
+          address: data.address || '',
+          spouseName: data.spouseName || '',
+          spouseEmail: data.spouseEmail || '',
+          spousePhone: data.spousePhone || '',
+          children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
+        });
+        setWizardStep('profile_review');
         setStep('wizard');
+        return;
+      }
+
+      if (data.status === 'member_expired') {
+        setForm((f) => ({
+          ...f,
+          name: data.name || '',
+          email: data.email || lookupEmail.trim(),
+          phone: data.phone || '',
+        }));
+        setMemberProfile({
+          phone: data.phone || '',
+          address: data.address || '',
+          spouseName: data.spouseName || '',
+          spouseEmail: data.spouseEmail || '',
+          spousePhone: data.spousePhone || '',
+          children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
+        });
+        setStep('membership_expired');
         return;
       }
 
@@ -315,13 +386,22 @@ export default function RegisterPage() {
           referredBy: form.referredBy,
           adults,
           kids: freeKids + paidKids,
-          totalPrice: priceBreakdown ? String(priceBreakdown.total) : '0',
+          totalPrice: String((priceBreakdown?.total || 0) + (isRenewing ? membershipCost : 0)),
           priceBreakdown: priceBreakdown ? JSON.stringify(priceBreakdown) : '',
           paymentStatus: payment.paymentStatus,
           paymentMethod: payment.paymentMethod,
           transactionId: payment.transactionId,
           selectedActivities: activityRegistrations.filter((r) => r.activityId).length > 0 ? JSON.stringify(activityRegistrations.filter((r) => r.activityId)) : '',
           customFields: Object.keys(customFieldValues).length > 0 ? JSON.stringify(customFieldValues) : '',
+          profileUpdate: profileChanged && memberProfile ? JSON.stringify({
+            phone: memberProfile.phone,
+            address: memberProfile.address,
+            spouseName: memberProfile.spouseName,
+            spouseEmail: memberProfile.spouseEmail,
+            spousePhone: memberProfile.spousePhone,
+            children: JSON.stringify(memberProfile.children),
+          }) : '',
+          membershipRenewal: isRenewing ? String(membershipCost) : '',
         }),
       });
       const json = await res.json();
@@ -348,6 +428,7 @@ export default function RegisterPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           participantId: existingParticipantId,
+          memberId: lookupResult?.memberId || '',
           name: form.name,
           phone: form.phone,
           city: form.city,
@@ -361,6 +442,14 @@ export default function RegisterPage() {
           transactionId: payment.transactionId,
           selectedActivities: activityRegistrations.filter((r) => r.activityId).length > 0 ? JSON.stringify(activityRegistrations.filter((r) => r.activityId)) : '',
           customFields: Object.keys(customFieldValues).length > 0 ? JSON.stringify(customFieldValues) : '',
+          profileUpdate: profileChanged && memberProfile ? JSON.stringify({
+            phone: memberProfile.phone,
+            address: memberProfile.address,
+            spouseName: memberProfile.spouseName,
+            spouseEmail: memberProfile.spouseEmail,
+            spousePhone: memberProfile.spousePhone,
+            children: JSON.stringify(memberProfile.children),
+          }) : '',
         }),
       });
       const json = await res.json();
@@ -436,7 +525,9 @@ export default function RegisterPage() {
     if (eventActivities.length > 0) {
       if (!validateActivitiesStep()) return;
     }
-    const total = priceBreakdown?.total || 0;
+    const eventTotal = priceBreakdown?.total || 0;
+    const renewalAmount = isRenewing ? membershipCost : 0;
+    const total = eventTotal + renewalAmount;
 
     if (isModifying) {
       // Calculate additional amount owed (no refund)
@@ -647,7 +738,24 @@ export default function RegisterPage() {
             </div>
           )}
         </div>
+        {isRenewing && membershipCost > 0 && (
+          <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 space-y-2">
+            <h3 className="text-sm font-semibold text-purple-700 dark:text-purple-300">Membership Renewal</h3>
+            <div className="flex justify-between text-sm">
+              <span className="text-purple-600 dark:text-purple-400">Yearly Membership</span>
+              <span className="text-purple-700 dark:text-purple-300 font-medium">${membershipCost.toFixed(2)}</span>
+            </div>
+          </div>
+        )}
         {priceBreakdown && <PriceDisplay breakdown={priceBreakdown} />}
+        {isRenewing && membershipCost > 0 && priceBreakdown && priceBreakdown.total > 0 && (
+          <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
+            <div className="flex justify-between text-sm font-semibold">
+              <span className="text-gray-900 dark:text-gray-100">Grand Total</span>
+              <span className="text-gray-900 dark:text-gray-100">${(membershipCost + priceBreakdown.total).toFixed(2)}</span>
+            </div>
+          </div>
+        )}
         {isModifying && priceBreakdown && originalPaidAmount > 0 && (
           <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3 text-sm space-y-1">
             <div className="flex justify-between">
@@ -685,9 +793,11 @@ export default function RegisterPage() {
             <HiOutlineExclamationTriangle className="w-7 h-7 text-red-600 dark:text-red-400" />
           </div>
           <p className="text-red-600 dark:text-red-400 font-medium">{errorMsg}</p>
-          <button onClick={() => { setErrorMsg(''); setStep('identify'); }} className="mt-4 btn-secondary">
-            Try Again
-          </button>
+          {errorMsg !== 'This event has ended.' && errorMsg !== 'This event is not open for registration.' && errorMsg !== 'Registration is currently closed for this event.' && errorMsg !== 'Event not found.' && (
+            <button onClick={() => { setErrorMsg(''); setStep('identify'); }} className="mt-4 btn-secondary">
+              Try Again
+            </button>
+          )}
         </div>
       )}
 
@@ -731,12 +841,14 @@ export default function RegisterPage() {
             {guestPolicy?.guestMessage || 'Members enjoy benefits at all our events. Join our community today!'}
           </p>
           <div className="space-y-3">
-            <button
-              onClick={() => { setWizardStep('contact'); setStep('wizard'); }}
-              className="btn-primary w-full"
+            <a
+              href="https://www.meant.org/join-meant.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-primary w-full inline-block text-center"
             >
               Become a Member
-            </button>
+            </a>
             {guestPolicy?.guestAction !== 'become_member' && (
               <button
                 onClick={() => { setWizardStep('contact'); setStep('wizard'); }}
@@ -745,6 +857,49 @@ export default function RegisterPage() {
                 Continue as Guest
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {step === 'membership_expired' && (
+        <div className="card p-6 text-center">
+          <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineExclamationTriangle className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+            Membership Expired
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+            Hi {form.name}, your membership status is <span className="font-medium text-amber-600 dark:text-amber-400">{lookupResult?.memberStatus || 'Expired'}</span>.
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+            Would you like to renew your membership{membershipCost > 0 ? ` ($${membershipCost.toFixed(2)}/year)` : ''}, or continue registering as a guest?
+          </p>
+          <div className="space-y-3">
+            <button
+              onClick={() => {
+                setIsRenewing(true);
+                setRegType('Member');
+                setWizardStep('profile_review');
+                setStep('wizard');
+              }}
+              className="btn-primary w-full"
+            >
+              Renew Membership{membershipCost > 0 ? ` ($${membershipCost.toFixed(2)})` : ''}
+            </button>
+            <button
+              onClick={() => {
+                setIsRenewing(false);
+                setRegType('Guest');
+                setMemberProfile(null);
+                setProfileChanged(false);
+                setWizardStep('contact');
+                setStep('wizard');
+              }}
+              className="btn-secondary w-full"
+            >
+              Continue as Guest
+            </button>
           </div>
         </div>
       )}
@@ -789,7 +944,7 @@ export default function RegisterPage() {
             <button
               onClick={() => {
                 setIsModifying(true);
-                setWizardStep(regType === 'Guest' ? 'contact' : 'attendees');
+                setWizardStep(regType === 'Guest' ? 'contact' : 'profile_review');
                 setStep('wizard');
               }}
               className="btn-primary w-full"
@@ -877,6 +1032,19 @@ export default function RegisterPage() {
             </div>
           )}
 
+          {/* Step: Profile Review (member only) */}
+          {wizardStep === 'profile_review' && memberProfile && (
+            <ProfileReviewStep
+              profile={memberProfile}
+              memberName={form.name}
+              onChange={(updated) => {
+                setMemberProfile(updated);
+                setProfileChanged(true);
+                setForm((f) => ({ ...f, phone: updated.phone }));
+              }}
+            />
+          )}
+
           {/* Step: Attendees */}
           {wizardStep === 'attendees' && (
             <div className="space-y-3">
@@ -942,9 +1110,14 @@ export default function RegisterPage() {
         </div>
       )}
 
-      {step === 'payment' && priceBreakdown && (
+      {step === 'payment' && (priceBreakdown || (isRenewing && membershipCost > 0)) && (
         <PaymentForm
-          amount={isModifying ? Math.max(0, priceBreakdown.total - originalPaidAmount) : priceBreakdown.total}
+          amount={(() => {
+            const eventTotal = priceBreakdown?.total || 0;
+            const renewalAmount = isRenewing ? membershipCost : 0;
+            const combined = eventTotal + renewalAmount;
+            return isModifying ? Math.max(0, combined - originalPaidAmount) : combined;
+          })()}
           eventId={eventId}
           eventName={eventName}
           payerName={form.name}
@@ -991,6 +1164,9 @@ export default function RegisterPage() {
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             {isModifying ? 'Registration Updated!' : 'Registration Successful!'}
           </h2>
+          {isRenewing && (
+            <p className="text-sm text-purple-600 dark:text-purple-400 font-medium mt-1">Membership renewed!</p>
+          )}
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{eventName}</p>
           {paymentInfo.transactionId && (

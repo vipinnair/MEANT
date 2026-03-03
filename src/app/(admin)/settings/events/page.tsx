@@ -34,12 +34,12 @@ interface EventRecord {
   date: string;
   description: string;
   status: string;
-  parentEventId: string;
   pricingRules: string;
   formConfig: string;
   activities: string;
   activityPricingMode: string;
   guestPolicy: string;
+  registrationOpen: string;
 }
 
 const emptyForm = {
@@ -47,7 +47,7 @@ const emptyForm = {
   date: new Date().toISOString().split('T')[0],
   description: '',
   status: 'Upcoming' as 'Upcoming' | 'Completed' | 'Cancelled',
-  parentEventId: '',
+  registrationOpen: 'true',
 };
 
 export default function EventsPage() {
@@ -107,7 +107,7 @@ export default function EventsPage() {
       date: record.date,
       description: record.description,
       status: record.status as 'Upcoming' | 'Completed' | 'Cancelled',
-      parentEventId: record.parentEventId || '',
+      registrationOpen: record.registrationOpen || 'true',
     });
     setPricing(parsePricingRules(record.pricingRules));
     setGuestPolicy(parseGuestPolicy(record.guestPolicy || ''));
@@ -129,8 +129,8 @@ export default function EventsPage() {
       const formConfigJson = formConfig.length > 0 ? JSON.stringify(formConfig) : '';
       const activitiesJson = eventActivities.length > 0 ? JSON.stringify(eventActivities) : '';
       const body = editing
-        ? { ...form, id: editing.id, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '' }
-        : { ...form, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '' };
+        ? { ...form, id: editing.id, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '', registrationOpen: form.registrationOpen }
+        : { ...form, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '', registrationOpen: form.registrationOpen };
       const res = await fetch('/api/events', {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -160,15 +160,6 @@ export default function EventsPage() {
       else toast.error(json.error || 'Delete failed');
     } catch { toast.error('Delete failed'); }
   };
-
-  // Helper: available parent events for the dropdown (no parent themselves, not current event or its sub-events)
-  const parentOptions = records.filter((r) => {
-    if (!r) return false;
-    if (r.parentEventId) return false; // already a sub-event
-    if (editing && r.id === editing.id) return false; // can't be own parent
-    if (editing && r.parentEventId === editing.id) return false; // is a child of current
-    return true;
-  });
 
   const columns: Column<EventRecord>[] = [
     { key: 'name', header: 'Event Name', sortable: true, filterable: true },
@@ -249,15 +240,21 @@ export default function EventsPage() {
                 <option value="Cancelled">Cancelled</option>
               </select>
             </div>
-            <div>
-              <label className="label">Parent Event</label>
-              <select value={form.parentEventId} onChange={(e) => setForm({ ...form, parentEventId: e.target.value })} className="select">
-                <option value="">None (standalone)</option>
-                {parentOptions.map((e) => (
-                  <option key={e.id} value={e.id}>{e.name}</option>
-                ))}
-              </select>
-            </div>
+          </div>
+
+          {/* Registration Open Toggle */}
+          <div className="flex items-start gap-3 pt-2">
+            <input
+              type="checkbox"
+              id="registrationOpen"
+              checked={form.registrationOpen === 'true'}
+              onChange={(e) => setForm({ ...form, registrationOpen: e.target.checked ? 'true' : 'false' })}
+              className="mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <label htmlFor="registrationOpen" className="cursor-pointer">
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Registration Open</span>
+              <p className="text-xs text-gray-500 dark:text-gray-400">When unchecked, users cannot register even if status is &quot;Upcoming&quot;</p>
+            </label>
           </div>
 
           {/* Member Policy */}

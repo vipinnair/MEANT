@@ -106,6 +106,16 @@ export default function GuestPolicySection({ pricing, guestPolicy, onPricingChan
             </div>
           )}
 
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={guestPolicy.allowGuestActivities !== false}
+              onChange={(e) => updatePolicy({ allowGuestActivities: e.target.checked })}
+              className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+            />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Allow guests to participate in activities</span>
+          </label>
+
           <div>
             <label className="label">Custom Message (optional)</label>
             <textarea

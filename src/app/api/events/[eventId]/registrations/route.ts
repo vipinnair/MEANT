@@ -3,7 +3,7 @@ import { getRows } from '@/lib/google-sheets';
 import { jsonResponse, errorResponse, requireAuth, validateBody } from '@/lib/api-helpers';
 import { SHEET_TABS } from '@/types';
 import { participantCreateSchema } from '@/types/schemas';
-import { registerParticipant, updateRegistration } from '@/services/events.service';
+import { registerParticipant, updateRegistration, updateMemberProfile } from '@/services/events.service';
 import { logActivity } from '@/lib/audit-log';
 
 export async function GET(
@@ -50,7 +50,17 @@ export async function POST(
       customFields: validated.customFields || '',
       city: validated.city,
       referredBy: validated.referredBy,
+      membershipRenewal: validated.membershipRenewal || '',
     });
+
+    if (validated.profileUpdate && validated.memberId) {
+      try {
+        const profileData = JSON.parse(validated.profileUpdate);
+        await updateMemberProfile(validated.memberId, profileData);
+      } catch (e) {
+        console.error('Profile update failed:', e);
+      }
+    }
 
     logActivity({
       userEmail: validated.email,
@@ -97,6 +107,15 @@ export async function PATCH(
       city: data.city,
       referredBy: data.referredBy,
     });
+
+    if (data.profileUpdate && data.memberId) {
+      try {
+        const profileData = JSON.parse(data.profileUpdate);
+        await updateMemberProfile(data.memberId, profileData);
+      } catch (e) {
+        console.error('Profile update failed:', e);
+      }
+    }
 
     logActivity({
       userEmail: updated.email || data.email || '',

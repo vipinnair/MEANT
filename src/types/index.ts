@@ -143,6 +143,7 @@ export interface GuestPolicy {
   allowGuests: boolean;
   guestAction: GuestAction;
   guestMessage?: string;
+  allowGuestActivities?: boolean;
 }
 
 // --- Event Pricing ---
@@ -175,12 +176,12 @@ export interface EventRecord {
   description: string;
   status: 'Upcoming' | 'Completed' | 'Cancelled';
   createdAt: string;
-  parentEventId: string;
   pricingRules: string; // JSON string of PricingRules
   formConfig: string; // JSON string of FormFieldConfig[]
   activities: string; // JSON string of ActivityConfig[]
   activityPricingMode: string; // 'flat' | 'per_activity' | ''
   guestPolicy: string; // JSON string of GuestPolicy
+  registrationOpen: string; // 'true' or ''
 }
 
 // --- Member ---
@@ -302,6 +303,10 @@ export interface FeeSettings {
   paypalFeeFixed: number;
 }
 
+export interface MembershipSettings {
+  yearlyCost: number;
+}
+
 export interface SocialLinks {
   instagram: string;
   facebook: string;
@@ -312,6 +317,7 @@ export interface SocialLinks {
 export interface PublicSettings {
   socialLinks: SocialLinks;
   feeSettings: FeeSettings;
+  membershipSettings: MembershipSettings;
 }
 
 // --- Activity Log ---

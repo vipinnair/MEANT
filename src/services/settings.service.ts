@@ -1,5 +1,5 @@
 import { getAllSettings, upsertSetting } from '@/lib/google-sheets';
-import type { PublicSettings, SocialLinks, FeeSettings } from '@/types';
+import type { PublicSettings, SocialLinks, FeeSettings, MembershipSettings } from '@/types';
 
 // ========================================
 // Settings Service
@@ -37,5 +37,9 @@ export async function getPublicSettings(): Promise<PublicSettings> {
     paypalFeeFixed: parseFloat(settings['fee_paypal_fixed'] || '0'),
   };
 
-  return { socialLinks, feeSettings };
+  const membershipSettings: MembershipSettings = {
+    yearlyCost: parseFloat(settings['membership_yearly_cost'] || '0'),
+  };
+
+  return { socialLinks, feeSettings, membershipSettings };
 }

@@ -32,6 +32,54 @@ async function createIncomeFromPayment(opts: {
   });
 }
 
+/**
+ * Renew an expired member's membership during event registration.
+ * Creates a Membership income record and updates the member's status.
+ */
+async function renewMembership(opts: {
+  memberId: string;
+  amount: string;
+  payerName: string;
+  paymentMethod: string;
+  eventName: string;
+}) {
+  const total = parseFloat(opts.amount || '0');
+  if (total <= 0) return;
+
+  const now = new Date().toISOString();
+  const today = now.split('T')[0];
+  const currentYear = String(new Date().getFullYear());
+
+  // Update member: status → Active, renewalDate, append year
+  const memberRow = await getRowById(SHEET_TABS.MEMBERS, opts.memberId);
+  if (memberRow) {
+    const existingYears = (memberRow.record.membershipYears || '')
+      .split(',').map((y: string) => y.trim()).filter(Boolean);
+    if (!existingYears.includes(currentYear)) existingYears.push(currentYear);
+    await updateRow(SHEET_TABS.MEMBERS, memberRow.rowIndex, {
+      ...memberRow.record,
+      status: 'Active',
+      renewalDate: today,
+      membershipYears: existingYears.join(','),
+      updatedAt: now,
+    });
+  }
+
+  // Create Membership income record
+  await appendRow(SHEET_TABS.INCOME, {
+    id: generateId(),
+    incomeType: 'Membership',
+    eventName: opts.eventName,
+    amount: total,
+    date: today,
+    paymentMethod: opts.paymentMethod || '',
+    payerName: opts.payerName,
+    notes: 'Membership renewal during event registration',
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
 // ========================================
 // Event Services
 // ========================================
@@ -45,12 +93,13 @@ export const eventService = createCrudService({
     date: String(data.date || ''),
     description: String(data.description || ''),
     status: String(data.status || 'Upcoming'),
-    parentEventId: String(data.parentEventId || ''),
+    parentEventId: '',
     pricingRules: String(data.pricingRules || ''),
     formConfig: String(data.formConfig || ''),
     activities: String(data.activities || ''),
     activityPricingMode: String(data.activityPricingMode || ''),
     guestPolicy: String(data.guestPolicy || ''),
+    registrationOpen: String(data.registrationOpen || 'true'),
   }),
 });
 
@@ -61,8 +110,8 @@ export async function getPublicDetail(eventId: string) {
   const existing = await getRowById(SHEET_TABS.EVENTS, eventId);
   if (!existing) throw new NotFoundError('Event');
 
-  const { id, name, date, description, status, parentEventId, pricingRules,
-    formConfig, activities, activityPricingMode, guestPolicy } = existing.record;
+  const { id, name, date, description, status, pricingRules,
+    formConfig, activities, activityPricingMode, guestPolicy, registrationOpen } = existing.record;
 
   const [participants, allEvents] = await Promise.all([
     getRows(SHEET_TABS.EVENT_PARTICIPANTS),
@@ -79,44 +128,26 @@ export async function getPublicDetail(eventId: string) {
     return Number.isFinite(n) && n >= 0 && n <= 99 ? n : 0;
   };
 
-  const subEvents = allEvents
-    .filter((e) => e.parentEventId === id)
-    .map((e) => ({ id: e.id, name: e.name, date: e.date, status: e.status, pricingRules: e.pricingRules || '' }));
-
-  const siblingEvents = parentEventId
-    ? allEvents
-        .filter((e) => e.parentEventId === parentEventId && e.id !== id)
-        .map((e) => ({ id: e.id, name: e.name, date: e.date, status: e.status, pricingRules: e.pricingRules || '' }))
-    : [];
-
-  const parentEvent = parentEventId
-    ? allEvents.find((e) => e.id === parentEventId)
-    : null;
-
   const upcomingEvents = allEvents
-    .filter((e) => e.status === 'Upcoming' && e.id !== id && !e.parentEventId)
+    .filter((e) => e.status === 'Upcoming' && e.id !== id)
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
     .slice(0, 5)
     .map((e) => ({ id: e.id, name: e.name, date: e.date }));
 
   return {
     id, name, date, description, status,
-    parentEventId: parentEventId || '',
-    parentEventName: parentEvent?.name || '',
     pricingRules: pricingRules || '',
     formConfig: formConfig || '',
     activities: activities || '',
     activityPricingMode: activityPricingMode || '',
     guestPolicy: guestPolicy || '',
+    registrationOpen: registrationOpen || 'true',
     totalRegistrations: registrations.length,
     totalCheckins: checkins.length,
-    // Headcount per type (adults + kids) — use registered for reg stats, actual for checkin stats
     memberCheckinAttendees: checkins.filter((c) => c.type === 'Member').reduce((sum, c) => sum + safeCount(c.actualAdults) + safeCount(c.actualKids), 0),
     guestCheckinAttendees: checkins.filter((c) => c.type === 'Guest').reduce((sum, c) => sum + safeCount(c.actualAdults) + safeCount(c.actualKids), 0),
     memberRegAttendees: registrations.filter((r) => r.type === 'Member').reduce((sum, r) => sum + safeCount(r.registeredAdults) + safeCount(r.registeredKids), 0),
     guestRegAttendees: registrations.filter((r) => r.type === 'Guest').reduce((sum, r) => sum + safeCount(r.registeredAdults) + safeCount(r.registeredKids), 0),
-    subEvents,
-    siblingEvents,
     upcomingEvents,
   };
 }
@@ -173,7 +204,6 @@ export async function lookup(eventId: string, email: string) {
   const guests = multiData[SHEET_TABS.GUESTS];
 
   const thisEvent = allEvents.find((e) => e.id === eventId);
-  const parentEventId = thisEvent?.parentEventId || '';
   const guestPolicy = parseGuestPolicy(thisEvent?.guestPolicy || '');
 
   // Check existing participation for this event
@@ -213,19 +243,6 @@ export async function lookup(eventId: string, email: string) {
     };
   }
 
-  // Count sibling event registrations
-  let siblingEventRegCount = 0;
-  if (parentEventId) {
-    const siblingEventIds = allEvents
-      .filter((e) => e.parentEventId === parentEventId && e.id !== eventId)
-      .map((e) => e.id);
-    if (siblingEventIds.length > 0) {
-      siblingEventRegCount = allParticipants.filter(
-        (p) => siblingEventIds.includes(p.eventId) && p.registeredAt && p.email?.toLowerCase().trim() === emailLower,
-      ).length;
-    }
-  }
-
   // Check members
   const member = members.find(
     (m) =>
@@ -245,9 +262,14 @@ export async function lookup(eventId: string, email: string) {
         name: member.name,
         email: member.email || '',
         phone: member.phone || '',
+        address: member.address || '',
+        spouseName: member.spouseName || '',
+        spouseEmail: member.spouseEmail || '',
+        spousePhone: member.spousePhone || '',
+        children: member.children || '',
         profileComplete,
         missingFields,
-        siblingEventRegCount,
+
         registrationData,
         guestPolicy,
       };
@@ -256,8 +278,15 @@ export async function lookup(eventId: string, email: string) {
         status: 'member_expired',
         memberId: member.id,
         name: member.name,
+        email: member.email || '',
+        phone: member.phone || '',
+        address: member.address || '',
+        spouseName: member.spouseName || '',
+        spouseEmail: member.spouseEmail || '',
+        spousePhone: member.spousePhone || '',
+        children: member.children || '',
         memberStatus: member.status,
-        siblingEventRegCount,
+
         registrationData,
         guestPolicy,
       };
@@ -278,13 +307,12 @@ export async function lookup(eventId: string, email: string) {
       phone: guest.phone || '',
       city: guest.city,
       referredBy: guest.referredBy,
-      siblingEventRegCount,
       registrationData,
       guestPolicy,
     };
   }
 
-  return { status: 'not_found', siblingEventRegCount, registrationData, guestPolicy };
+  return { status: 'not_found', registrationData, guestPolicy };
 }
 
 /**
@@ -356,12 +384,16 @@ export async function registerParticipant(
     customFields?: string;
     city?: string;
     referredBy?: string;
+    membershipRenewal?: string;
   },
 ) {
   const event = await getRowById(SHEET_TABS.EVENTS, eventId);
   if (!event) throw new NotFoundError('Event');
   if (event.record.status !== 'Upcoming') {
     throw new Error('Event is not open for registration');
+  }
+  if (event.record.registrationOpen !== undefined && event.record.registrationOpen !== '' && event.record.registrationOpen !== 'true') {
+    throw new Error('Registration is currently closed for this event');
   }
 
   const emailLower = data.email.toLowerCase().trim();
@@ -422,14 +454,29 @@ export async function registerParticipant(
 
   await appendRow(SHEET_TABS.EVENT_PARTICIPANTS, record);
 
-  // Create income record if payment was made
+  // Split membership vs event amounts for income records
+  const membershipAmount = parseFloat(data.membershipRenewal || '0');
+  const eventAmount = parseFloat(data.totalPrice || '0') - membershipAmount;
+
+  // Create Event income record (event-only portion)
   await createIncomeFromPayment({
     eventName: event.record.name,
-    amount: data.totalPrice,
+    amount: String(Math.max(0, eventAmount)),
     payerName: data.name,
     paymentMethod: data.paymentMethod,
     source: 'registration',
   });
+
+  // Create Membership income record and renew member if applicable
+  if (membershipAmount > 0 && data.memberId) {
+    await renewMembership({
+      memberId: data.memberId,
+      amount: String(membershipAmount),
+      payerName: data.name,
+      paymentMethod: data.paymentMethod,
+      eventName: event.record.name,
+    });
+  }
 
   return record;
 }
@@ -727,4 +774,33 @@ export async function search(eventId: string, query: string) {
   }
 
   return results.slice(0, 10);
+}
+
+/**
+ * Update a member's profile fields (phone, address, spouse, children).
+ */
+export async function updateMemberProfile(
+  memberId: string,
+  data: {
+    phone?: string;
+    address?: string;
+    spouseName?: string;
+    spouseEmail?: string;
+    spousePhone?: string;
+    children?: string;
+  },
+) {
+  const row = await getRowById(SHEET_TABS.MEMBERS, memberId);
+  if (!row) return;
+
+  const now = new Date().toISOString();
+  const updated: Record<string, string> = { ...row.record, updatedAt: now };
+  if (data.phone !== undefined) updated.phone = data.phone;
+  if (data.address !== undefined) updated.address = data.address;
+  if (data.spouseName !== undefined) updated.spouseName = data.spouseName;
+  if (data.spouseEmail !== undefined) updated.spouseEmail = data.spouseEmail;
+  if (data.spousePhone !== undefined) updated.spousePhone = data.spousePhone;
+  if (data.children !== undefined) updated.children = data.children;
+
+  await updateRow(SHEET_TABS.MEMBERS, row.rowIndex, updated);
 }

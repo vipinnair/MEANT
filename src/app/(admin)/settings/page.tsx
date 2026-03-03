@@ -13,6 +13,7 @@ import {
   HiOutlineXCircle,
   HiOutlineGlobeAlt,
   HiOutlineCreditCard,
+  HiOutlineUserGroup,
 } from 'react-icons/hi2';
 import { FaSquare, FaPaypal, FaCcVisa, FaCcMastercard, FaCcAmex } from 'react-icons/fa6';
 
@@ -53,6 +54,12 @@ export default function SettingsPage() {
   });
   const [savingFees, setSavingFees] = useState(false);
 
+  // Membership settings state
+  const [membershipSettings, setMembershipSettings] = useState({
+    yearlyCost: '',
+  });
+  const [savingMembership, setSavingMembership] = useState(false);
+
   // Load existing settings on mount
   useEffect(() => {
     (async () => {
@@ -72,6 +79,9 @@ export default function SettingsPage() {
             squareFeeFixed: s['fee_square_fixed'] || '',
             paypalFeePercent: s['fee_paypal_percent'] || '',
             paypalFeeFixed: s['fee_paypal_fixed'] || '',
+          });
+          setMembershipSettings({
+            yearlyCost: s['membership_yearly_cost'] || '',
           });
         }
       } catch {
@@ -136,6 +146,29 @@ export default function SettingsPage() {
       toast.error('Failed to save fee settings');
     } finally {
       setSavingFees(false);
+    }
+  };
+
+  const saveMembershipSettings = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    setSavingMembership(true);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: {
+            membership_yearly_cost: membershipSettings.yearlyCost,
+          },
+        }),
+      });
+      const json = await res.json();
+      if (json.success) toast.success('Membership settings saved');
+      else toast.error(json.error || 'Failed to save');
+    } catch {
+      toast.error('Failed to save membership settings');
+    } finally {
+      setSavingMembership(false);
     }
   };
 
@@ -283,6 +316,35 @@ export default function SettingsPage() {
             {isAdmin && (
               <button type="submit" disabled={savingSocial} className="btn-primary">
                 {savingSocial ? 'Saving...' : 'Save Social Links'}
+              </button>
+            )}
+          </form>
+        </div>
+
+        {/* Membership Settings */}
+        <div className="card p-6">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+            <HiOutlineUserGroup className="w-5 h-5" /> Membership
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Set the yearly membership cost charged when expired members renew during event registration.
+          </p>
+          <form onSubmit={saveMembershipSettings} className="space-y-3">
+            <div>
+              <label className="label">Yearly Membership Cost ($)</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={membershipSettings.yearlyCost}
+                onChange={(e) => setMembershipSettings({ ...membershipSettings, yearlyCost: e.target.value })}
+                className="input"
+                placeholder="50.00"
+              />
+            </div>
+            {isAdmin && (
+              <button type="submit" disabled={savingMembership} className="btn-primary">
+                {savingMembership ? 'Saving...' : 'Save Membership Settings'}
               </button>
             )}
           </form>

@@ -8,6 +8,7 @@ export const DEFAULT_GUEST_POLICY: GuestPolicy = {
   allowGuests: true,
   guestAction: 'pay_fee',
   guestMessage: '',
+  allowGuestActivities: true,
 };
 
 export function parseGuestPolicy(json: string): GuestPolicy {

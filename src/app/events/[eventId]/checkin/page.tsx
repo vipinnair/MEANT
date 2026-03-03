@@ -49,7 +49,6 @@ interface LookupResult {
   referredBy?: string;
   memberStatus?: string;
   checkedInAt?: string;
-  siblingEventRegCount?: number;
   registrationData?: RegistrationData;
   guestPolicy?: GuestPolicy;
 }
@@ -73,7 +72,6 @@ function CheckinContent() {
   const [pricingRules, setPricingRules] = useState<PricingRules | null>(null);
   const [priceBreakdown, setPriceBreakdown] = useState<PriceBreakdown | null>(null);
   const [regType, setRegType] = useState<'Member' | 'Guest'>('Guest');
-  const [siblingEventRegCount, setSiblingEventRegCount] = useState(0);
   const [preRegistered, setPreRegistered] = useState(false);
   const [preRegisteredPaid, setPreRegisteredPaid] = useState(false);
 
@@ -124,13 +122,13 @@ function CheckinContent() {
         adults,
         freeKids,
         paidKids,
-        otherSubEventCount: siblingEventRegCount,
+        otherSubEventCount: 0,
       });
       setPriceBreakdown(breakdown);
     } else {
       setPriceBreakdown(null);
     }
-  }, [pricingRules, regType, adults, freeKids, paidKids, siblingEventRegCount]);
+  }, [pricingRules, regType, adults, freeKids, paidKids]);
 
   const handleLookup = useCallback(async (email?: string) => {
     const emailToUse = email || lookupEmail.trim();
@@ -154,7 +152,6 @@ function CheckinContent() {
 
       const data = json.data as LookupResult;
       setLookupResult(data);
-      setSiblingEventRegCount(data.siblingEventRegCount || 0);
       if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
 
       // Pre-fill from registration data if available
@@ -249,6 +246,15 @@ function CheckinContent() {
             setPricingRules(parsePricingRules(json.data.pricingRules));
           }
           setGuestPolicy(parseGuestPolicy(json.data.guestPolicy || ''));
+
+          if (json.data.date) {
+            const today = new Date().toISOString().split('T')[0];
+            if (today > json.data.date) {
+              setErrorMsg('This event has ended.');
+              setStep('error');
+              return;
+            }
+          }
 
           if (json.data.status === 'Cancelled') {
             setErrorMsg('This event has been cancelled.');
@@ -444,9 +450,11 @@ function CheckinContent() {
             <HiOutlineExclamationTriangle className="w-7 h-7 text-red-600 dark:text-red-400" />
           </div>
           <p className="text-red-600 dark:text-red-400 font-medium">{errorMsg}</p>
-          <button onClick={() => { setErrorMsg(''); setStep('lookup'); }} className="mt-4 btn-secondary">
-            Try Again
-          </button>
+          {errorMsg !== 'This event has ended.' && errorMsg !== 'This event has been cancelled.' && errorMsg !== 'Event not found.' && (
+            <button onClick={() => { setErrorMsg(''); setStep('lookup'); }} className="mt-4 btn-secondary">
+              Try Again
+            </button>
+          )}
         </div>
       )}
 
@@ -591,12 +599,14 @@ function CheckinContent() {
             {guestPolicy?.guestMessage || 'Members enjoy benefits at all our events. Join our community today!'}
           </p>
           <div className="space-y-3">
-            <button
-              onClick={() => setStep('guest_form')}
-              className="btn-primary w-full"
+            <a
+              href="https://www.meant.org/join-meant.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn-primary w-full inline-block text-center"
             >
               Become a Member
-            </button>
+            </a>
             {guestPolicy?.guestAction !== 'become_member' && (
               <button
                 onClick={() => setStep('guest_form')}

@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import QRCode from 'react-qr-code';
-import { parsePricingRules, formatPricingSummary } from '@/lib/pricing';
+import { parsePricingRules } from '@/lib/pricing';
 import {
   HiOutlineUserGroup,
   HiOutlineCheckCircle,
@@ -15,29 +15,18 @@ import {
   HiOutlineCurrencyDollar,
 } from 'react-icons/hi2';
 
-interface SubEvent {
-  id: string;
-  name: string;
-  date: string;
-  status: string;
-  pricingRules: string;
-}
-
 interface EventData {
   id: string;
   name: string;
   date: string;
   description: string;
   status: string;
-  parentEventId: string;
-  parentEventName: string;
   pricingRules: string;
   totalRegistrations: number;
   totalCheckins: number;
   memberCheckins: number;
   guestCheckins: number;
-  subEvents: SubEvent[];
-  siblingEvents: SubEvent[];
+  registrationOpen: string;
 }
 
 interface SearchResult {
@@ -66,6 +55,14 @@ export default function EventLandingPage() {
       const res = await fetch(`/api/events/${eventId}`);
       const json = await res.json();
       if (json.success) {
+        if (json.data.date) {
+          const today = new Date().toISOString().split('T')[0];
+          if (today > json.data.date) {
+            setError('This event has ended.');
+            setLoading(false);
+            return;
+          }
+        }
         setEvent(json.data);
       } else {
         setError('Event not found.');
@@ -200,21 +197,6 @@ export default function EventLandingPage() {
             <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">Point your camera at the QR code</p>
           </div>
 
-          {/* Parent Event Breadcrumb */}
-          {event.parentEventId && event.parentEventName && (
-            <div className="bg-black/5 dark:bg-white/10 backdrop-blur-sm rounded-xl p-4 text-center">
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Part of{' '}
-                <button
-                  onClick={() => router.push(`/events/${event.parentEventId}`)}
-                  className="text-gray-900 dark:text-white font-medium underline underline-offset-2 hover:text-indigo-100"
-                >
-                  {event.parentEventName}
-                </button>
-              </p>
-            </div>
-          )}
-
           {/* Pricing Info */}
           {(() => {
             const rules = parsePricingRules(event.pricingRules);
@@ -264,35 +246,6 @@ export default function EventLandingPage() {
               </div>
             );
           })()}
-
-          {/* Sub-Events / Activities */}
-          {event.subEvents && event.subEvents.length > 0 && (
-            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-xl border border-gray-200 dark:border-gray-700">
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Activities</h2>
-              <div className="space-y-2">
-                {event.subEvents.map((sub) => {
-                  const subRules = parsePricingRules(sub.pricingRules);
-                  return (
-                    <button
-                      key={sub.id}
-                      onClick={() => router.push(`/events/${sub.id}`)}
-                      className="w-full flex items-center justify-between p-3 rounded-xl border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 transition-colors text-left"
-                    >
-                      <div>
-                        <p className="font-medium text-gray-900 dark:text-gray-100 text-sm">{sub.name}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                          {formatDate(sub.date)}
-                        </p>
-                      </div>
-                      <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
-                        {formatPricingSummary(subRules)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {/* Tablet Check-In Section */}
           <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-xl border border-gray-200 dark:border-gray-700">
@@ -379,12 +332,16 @@ export default function EventLandingPage() {
 
           {/* Register Link */}
           <div className="text-center">
-            <button
-              onClick={() => router.push(`/events/${eventId}/register`)}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-black/5 dark:bg-white/10 backdrop-blur-sm text-gray-900 dark:text-white rounded-xl font-medium hover:bg-black/10 dark:hover:bg-white/20 transition-colors border border-black/10 dark:border-white/20"
-            >
-              Register for this Event
-            </button>
+            {event.registrationOpen !== '' && event.registrationOpen !== 'true' && event.status === 'Upcoming' ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Registration is currently closed for this event.</p>
+            ) : (
+              <button
+                onClick={() => router.push(`/events/${eventId}/register`)}
+                className="inline-flex items-center gap-2 px-6 py-3 bg-black/5 dark:bg-white/10 backdrop-blur-sm text-gray-900 dark:text-white rounded-xl font-medium hover:bg-black/10 dark:hover:bg-white/20 transition-colors border border-black/10 dark:border-white/20"
+              >
+                Register for this Event
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -55,6 +55,7 @@ export const SHEET_SCHEMAS: Record<string, string[]> = {
     'id', 'name', 'date', 'description', 'status', 'createdAt',
     'parentEventId', 'pricingRules',
     'formConfig', 'activities', 'activityPricingMode', 'guestPolicy',
+    'registrationOpen',
   ],
   [SHEET_TABS.MEMBERS]: [
     'id', 'name', 'address', 'email', 'phone',

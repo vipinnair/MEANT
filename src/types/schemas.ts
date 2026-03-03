@@ -154,12 +154,12 @@ export const eventCreateSchema = z.object({
   date: z.string().default(''),
   description: z.string().default(''),
   status: z.enum(['Upcoming', 'Completed', 'Cancelled']).default('Upcoming'),
-  parentEventId: z.string().default(''),
   pricingRules: z.string().default(''),
   formConfig: z.string().default(''),
   activities: z.string().default(''),
   activityPricingMode: z.string().default(''),
   guestPolicy: z.string().default(''),
+  registrationOpen: z.string().default('true'),
 });
 
 export const eventUpdateSchema = z.object({
@@ -186,6 +186,8 @@ export const participantCreateSchema = z.object({
   customFields: z.string().default(''),
   city: z.string().optional(),
   referredBy: z.string().optional(),
+  profileUpdate: z.string().optional().default(''),
+  membershipRenewal: z.string().optional().default(''),
   // Check-in specific fields
   isCheckin: z.boolean().optional().default(false),
   actualAdults: z.coerce.number().min(0).optional(),
