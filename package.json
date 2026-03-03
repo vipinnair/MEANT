@@ -19,6 +19,7 @@
     "@paypal/paypal-js": "^8.0.0",
     "@prisma/adapter-neon": "^7.4.2",
     "@prisma/client": "^7.4.2",
+    "@sentry/nextjs": "^10.42.0",
     "@vercel/blob": "^2.3.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.6.0",
