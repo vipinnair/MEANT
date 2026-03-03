@@ -9,7 +9,13 @@ export default function LandingPage() {
   const router = useRouter();
 
   useEffect(() => {
-    if (session) router.push('/dashboard');
+    if (!session) return;
+    const role = (session.user as Record<string, unknown>)?.role as string | null;
+    if (role === 'admin' || role === 'committee') {
+      router.push('/dashboard');
+    } else if (role === 'member') {
+      router.push('/portal');
+    }
   }, [session, router]);
 
   if (status === 'loading') {
@@ -24,9 +30,7 @@ export default function LandingPage() {
     <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 flex items-center justify-center">
       <div className="max-w-md w-full mx-4">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-2xl">MO</span>
-          </div>
+          <img src="/logo.png" alt="MEANT" className="w-16 h-16 rounded-2xl mx-auto mb-4" />
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">MEANT Operations</h1>
           <p className="mt-2 text-gray-500 dark:text-gray-400">
             Operations management for MEANT
@@ -38,11 +42,11 @@ export default function LandingPage() {
             Sign in to continue
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-6">
-            Use your Google account to access the operations dashboard.
+            Use your Google account to access the portal.
           </p>
 
           <button
-            onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
+            onClick={() => signIn('google', { callbackUrl: '/' })}
             className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-200"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
@@ -68,7 +72,7 @@ export default function LandingPage() {
 
           <div className="mt-6 text-center">
             <p className="text-xs text-gray-400 dark:text-gray-500">
-              Access is restricted to authorized committee members.
+              Access is restricted to authorized members and committee.
             </p>
           </div>
         </div>

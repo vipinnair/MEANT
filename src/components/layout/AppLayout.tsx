@@ -67,9 +67,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <HiOutlineBars3 className="w-6 h-6" />
         </button>
         <div className="ml-3 flex items-center gap-2">
-          <div className="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-xs">MO</span>
-          </div>
+          <img src="/logo.png" alt="MEANT" className="w-7 h-7 rounded-lg" />
           <span className="font-semibold text-gray-900 dark:text-gray-100">MEANT Operations</span>
         </div>
         <div className="ml-auto">

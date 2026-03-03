@@ -40,14 +40,16 @@ export async function validateBody<Output, Def extends ZodTypeDef, Input>(
 export async function getSessionRole(): Promise<{
   role: UserRole | null;
   email: string;
+  memberId: string | null;
   authenticated: boolean;
 }> {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
-    return { role: null, email: '', authenticated: false };
+    return { role: null, email: '', memberId: null, authenticated: false };
   }
   const role = (session.user as Record<string, unknown>).role as UserRole | null ?? null;
-  return { role, email: session.user.email, authenticated: true };
+  const memberId = (session.user as Record<string, unknown>).memberId as string | null ?? null;
+  return { role, email: session.user.email, memberId, authenticated: true };
 }
 
 export async function requireAuth(): Promise<
@@ -57,7 +59,7 @@ export async function requireAuth(): Promise<
   if (!authenticated) {
     return errorResponse('Unauthorized', 401);
   }
-  if (!role) {
+  if (role !== 'admin' && role !== 'committee') {
     return errorResponse('Forbidden: access denied', 403);
   }
   return { role, email };
@@ -78,4 +80,20 @@ export async function requireCommitteeOrAdmin(): Promise<
   { role: UserRole; email: string } | NextResponse
 > {
   return requireAuth();
+}
+
+export async function requireMember(): Promise<
+  { role: UserRole; email: string; memberId: string } | NextResponse
+> {
+  const { role, email, memberId, authenticated } = await getSessionRole();
+  if (!authenticated) {
+    return errorResponse('Unauthorized', 401);
+  }
+  if (!role) {
+    return errorResponse('Forbidden: access denied', 403);
+  }
+  if (!memberId) {
+    return errorResponse('No member profile found', 403);
+  }
+  return { role, email, memberId };
 }

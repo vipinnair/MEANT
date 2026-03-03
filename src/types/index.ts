@@ -2,7 +2,7 @@
 // Core Type Definitions
 // ========================================
 
-export type UserRole = 'admin' | 'committee';
+export type UserRole = 'admin' | 'committee' | 'member';
 
 export interface AppUser {
   email: string;

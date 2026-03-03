@@ -7,15 +7,13 @@ import { Suspense } from 'react';
 function SignInContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
-  const callbackUrl = searchParams.get('callbackUrl') || '/dashboard';
+  const callbackUrl = searchParams.get('callbackUrl') || '/';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 flex items-center justify-center">
       <div className="max-w-md w-full mx-4">
         <div className="text-center mb-8">
-          <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-2xl">MO</span>
-          </div>
+          <img src="/logo.png" alt="MEANT" className="w-16 h-16 rounded-2xl mx-auto mb-4" />
           <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Sign In</h1>
           <p className="mt-2 text-gray-500 dark:text-gray-400">
             MEANT Operations

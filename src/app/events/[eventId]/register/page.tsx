@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState, useMemo } from 'react';
-import { useParams } from 'next/navigation';
+import { useEffect, useState, useMemo, useRef } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import PublicLayout from '@/components/events/PublicLayout';
 import PriceDisplay from '@/components/events/PriceDisplay';
 import PaymentForm from '@/components/events/PaymentForm';
@@ -60,6 +61,9 @@ interface LookupResult {
 export default function RegisterPage() {
   const params = useParams();
   const eventId = params.eventId as string;
+  const { data: session, status: sessionStatus } = useSession();
+  const router = useRouter();
+  const autoLookupDone = useRef(false);
 
   const [step, setStep] = useState<Step>('loading');
   const [wizardStep, setWizardStep] = useState<WizardStep>('attendees');
@@ -130,6 +134,158 @@ export default function RegisterPage() {
     return steps;
   }, [regType, eventActivities.length, guestPolicy?.allowGuestActivities]);
 
+  // Auth gate: redirect to sign-in if not authenticated
+  useEffect(() => {
+    if (sessionStatus === 'unauthenticated') {
+      router.push(`/auth/signin?callbackUrl=/events/${eventId}/register`);
+    }
+  }, [sessionStatus, router, eventId]);
+
+  // Auto-lookup when identify step is reached and user is authenticated
+  useEffect(() => {
+    if (step === 'identify' && session?.user?.email && !autoLookupDone.current) {
+      autoLookupDone.current = true;
+      setLookupEmail(session.user.email);
+      // Trigger lookup with session email
+      (async () => {
+        try {
+          const res = await fetch(`/api/events/${eventId}/lookup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: session.user.email!.trim() }),
+          });
+          const json = await res.json();
+          if (!json.success) { setErrorMsg(json.error); setStep('error'); return; }
+
+          const data = json.data as LookupResult;
+          setLookupResult(data);
+          if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
+
+          if (data.status === 'already_checked_in') {
+            setForm((f) => ({ ...f, name: data.name || '' }));
+            setStep('success');
+            return;
+          }
+
+          if (data.registrationData) {
+            setExistingParticipantId(data.registrationData.participantId);
+            setOriginalPaidAmount(
+              data.registrationData.paymentStatus === 'paid'
+                ? parseFloat(data.registrationData.totalPrice || '0')
+                : 0,
+            );
+            setForm((f) => ({
+              ...f,
+              name: data.name || f.name,
+              email: data.email || session.user.email!.trim(),
+              phone: data.phone || f.phone,
+              city: data.city || f.city,
+              referredBy: data.referredBy || f.referredBy,
+            }));
+            const regAdults = data.registrationData.registeredAdults || 1;
+            const regKids = data.registrationData.registeredKids || 0;
+            setAdults(regAdults);
+            if (pricingRules?.memberPricingModel === 'family') {
+              setFreeKids(regKids);
+            } else {
+              setFreeKids(0);
+              setPaidKids(regKids);
+            }
+            if (data.registrationData.selectedActivities) {
+              try {
+                const parsed = JSON.parse(data.registrationData.selectedActivities);
+                if (Array.isArray(parsed)) setActivityRegistrations(parsed);
+              } catch { /* ignore */ }
+            }
+            if (data.status === 'member_active' || data.status === 'member_expired') {
+              setRegType('Member');
+              setMemberProfile({
+                phone: data.phone || '',
+                address: data.address || '',
+                spouseName: data.spouseName || '',
+                spouseEmail: data.spouseEmail || '',
+                spousePhone: data.spousePhone || '',
+                children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
+              });
+            } else {
+              setRegType('Guest');
+            }
+            setStep('already_registered');
+            return;
+          }
+
+          if (data.status === 'member_active') {
+            setRegType('Member');
+            setForm((f) => ({
+              ...f,
+              name: data.name || '',
+              email: data.email || session.user.email!.trim(),
+              phone: data.phone || '',
+            }));
+            setMemberProfile({
+              phone: data.phone || '',
+              address: data.address || '',
+              spouseName: data.spouseName || '',
+              spouseEmail: data.spouseEmail || '',
+              spousePhone: data.spousePhone || '',
+              children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
+            });
+            setWizardStep('profile_review');
+            setStep('wizard');
+            return;
+          }
+
+          if (data.status === 'member_expired') {
+            setForm((f) => ({
+              ...f,
+              name: data.name || '',
+              email: data.email || session.user.email!.trim(),
+              phone: data.phone || '',
+            }));
+            setMemberProfile({
+              phone: data.phone || '',
+              address: data.address || '',
+              spouseName: data.spouseName || '',
+              spouseEmail: data.spouseEmail || '',
+              spousePhone: data.spousePhone || '',
+              children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
+            });
+            setStep('membership_expired');
+            return;
+          }
+
+          // Guest flow — check guest policy
+          if (guestPolicy && (!guestPolicy.allowGuests || guestPolicy.guestAction === 'blocked')) {
+            setErrorMsg(guestPolicy.guestMessage || 'Guest registration is not available for this event.');
+            setStep('error');
+            return;
+          }
+
+          if (data.status === 'returning_guest') {
+            setRegType('Guest');
+            setForm({
+              name: data.name || '',
+              email: data.email || session.user.email!.trim(),
+              phone: data.phone || '',
+              city: data.city || '',
+              referredBy: data.referredBy || '',
+            });
+            setStep('membership_offer');
+            return;
+          }
+
+          // not_found
+          setRegType('Guest');
+          setForm((f) => ({ ...f, email: session.user.email!.trim() }));
+          setStep('membership_offer');
+        } catch {
+          setErrorMsg('Lookup failed.');
+          setStep('error');
+        }
+      })();
+    }
+  }, [step, session, eventId, pricingRules, guestPolicy]);
+
   // Fetch fee settings
   useEffect(() => {
     (async () => {
@@ -178,7 +334,7 @@ export default function RegisterPage() {
             setStep('error');
             return;
           }
-          if (json.data.registrationOpen !== undefined && json.data.registrationOpen !== '' && json.data.registrationOpen !== 'true') {
+          if (json.data.registrationOpen?.toLowerCase() !== 'true') {
             setErrorMsg('Registration is currently closed for this event.');
             setStep('error');
             return;
@@ -781,7 +937,7 @@ export default function RegisterPage() {
 
   return (
     <PublicLayout eventName={eventName}>
-      {step === 'loading' && (
+      {(step === 'loading' || sessionStatus === 'loading') && (
         <div className="flex justify-center py-12">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
         </div>

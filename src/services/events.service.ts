@@ -99,7 +99,7 @@ export const eventService = createCrudService({
     activities: String(data.activities || ''),
     activityPricingMode: String(data.activityPricingMode || ''),
     guestPolicy: String(data.guestPolicy || ''),
-    registrationOpen: String(data.registrationOpen || 'true'),
+    registrationOpen: String(data.registrationOpen || '').toLowerCase() === 'true' ? 'true' : '',
   }),
 });
 
@@ -141,7 +141,7 @@ export async function getPublicDetail(eventId: string) {
     activities: activities || '',
     activityPricingMode: activityPricingMode || '',
     guestPolicy: guestPolicy || '',
-    registrationOpen: registrationOpen || 'true',
+    registrationOpen: registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
     totalRegistrations: registrations.length,
     totalCheckins: checkins.length,
     memberCheckinAttendees: checkins.filter((c) => c.type === 'Member').reduce((sum, c) => sum + safeCount(c.actualAdults) + safeCount(c.actualKids), 0),
@@ -392,7 +392,7 @@ export async function registerParticipant(
   if (event.record.status !== 'Upcoming') {
     throw new Error('Event is not open for registration');
   }
-  if (event.record.registrationOpen !== undefined && event.record.registrationOpen !== '' && event.record.registrationOpen !== 'true') {
+  if (event.record.registrationOpen?.toLowerCase() !== 'true') {
     throw new Error('Registration is currently closed for this event');
   }
 

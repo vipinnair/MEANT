@@ -261,6 +261,17 @@ export const paymentSchema = z.discriminatedUnion('action', [
   paypalCaptureSchema,
 ]);
 
+// --- Member Profile (portal self-service) ---
+
+export const memberProfileUpdateSchema = z.object({
+  phone: z.string().optional(),
+  address: z.string().optional(),
+  spouseName: z.string().optional(),
+  spouseEmail: z.string().optional(),
+  spousePhone: z.string().optional(),
+  children: z.string().optional(), // JSON string of Child[]
+});
+
 // --- Settings ---
 
 export const settingsUpdateSchema = z.object({

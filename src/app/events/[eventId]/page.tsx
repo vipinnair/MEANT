@@ -332,7 +332,7 @@ export default function EventLandingPage() {
 
           {/* Register Link */}
           <div className="text-center">
-            {event.registrationOpen !== '' && event.registrationOpen !== 'true' && event.status === 'Upcoming' ? (
+            {event.registrationOpen?.toLowerCase() !== 'true' && event.status === 'Upcoming' ? (
               <p className="text-sm text-gray-500 dark:text-gray-400">Registration is currently closed for this event.</p>
             ) : (
               <button

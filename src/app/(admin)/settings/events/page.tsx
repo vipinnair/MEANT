@@ -107,7 +107,7 @@ export default function EventsPage() {
       date: record.date,
       description: record.description,
       status: record.status as 'Upcoming' | 'Completed' | 'Cancelled',
-      registrationOpen: record.registrationOpen || 'true',
+      registrationOpen: record.registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
     });
     setPricing(parsePricingRules(record.pricingRules));
     setGuestPolicy(parseGuestPolicy(record.guestPolicy || ''));
@@ -247,8 +247,8 @@ export default function EventsPage() {
             <input
               type="checkbox"
               id="registrationOpen"
-              checked={form.registrationOpen === 'true'}
-              onChange={(e) => setForm({ ...form, registrationOpen: e.target.checked ? 'true' : 'false' })}
+              checked={form.registrationOpen?.toLowerCase() === 'true'}
+              onChange={(e) => setForm({ ...form, registrationOpen: e.target.checked ? 'true' : '' })}
               className="mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
             />
             <label htmlFor="registrationOpen" className="cursor-pointer">

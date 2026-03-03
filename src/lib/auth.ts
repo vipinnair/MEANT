@@ -34,20 +34,57 @@ async function getCommitteeMembers(): Promise<Map<string, UserRole>> {
   }
 }
 
-async function getUserRole(email: string): Promise<UserRole | null> {
+// --- Member email → memberId cache (5-minute TTL) ---
+let memberEmailCache: { map: Map<string, string>; fetchedAt: number } | null = null;
+const MEMBER_CACHE_TTL = 5 * 60 * 1000;
+
+async function getMemberEmailMap(): Promise<Map<string, string>> {
+  const now = Date.now();
+  if (memberEmailCache && now - memberEmailCache.fetchedAt < MEMBER_CACHE_TTL) {
+    return memberEmailCache.map;
+  }
+
+  try {
+    const rows = await getRows(SHEET_TABS.MEMBERS);
+    const map = new Map<string, string>();
+    for (const r of rows) {
+      const id = r.id;
+      if (!id) continue;
+      const email = (r.email || '').trim().toLowerCase();
+      const spouseEmail = (r.spouseEmail || '').trim().toLowerCase();
+      const loginEmail = (r.loginEmail || '').trim().toLowerCase();
+      if (email) map.set(email, id);
+      if (spouseEmail) map.set(spouseEmail, id);
+      if (loginEmail) map.set(loginEmail, id);
+    }
+    memberEmailCache = { map, fetchedAt: now };
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+async function getUserRole(email: string): Promise<{ role: UserRole | null; memberId: string | null }> {
   const lowerEmail = email.toLowerCase();
+
+  // Look up memberId for all users (admin/committee may also be members)
+  const memberMap = await getMemberEmailMap();
+  const memberId = memberMap.get(lowerEmail) || null;
 
   // 1. Check Committee Members sheet
   const committeeMembers = await getCommitteeMembers();
   const sheetRole = committeeMembers.get(lowerEmail);
-  if (sheetRole) return sheetRole;
+  if (sheetRole) return { role: sheetRole, memberId };
 
   // 2. Fallback: check ADMIN_EMAILS env var (bootstrap)
   const envAdmins = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
-  if (envAdmins.includes(lowerEmail)) return 'admin';
+  if (envAdmins.includes(lowerEmail)) return { role: 'admin', memberId };
 
-  // 3. Unknown user — no access
-  return null;
+  // 3. Check Members sheet
+  if (memberId) return { role: 'member', memberId };
+
+  // 4. Unknown user — no access
+  return { role: null, memberId: null };
 }
 
 export const authOptions: NextAuthOptions = {
@@ -67,13 +104,16 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async jwt({ token, user }) {
       if (user?.email) {
-        token.role = await getUserRole(user.email);
+        const { role, memberId } = await getUserRole(user.email);
+        token.role = role;
+        token.memberId = memberId;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         (session.user as Record<string, unknown>).role = token.role;
+        (session.user as Record<string, unknown>).memberId = token.memberId;
       }
       return session;
     },
@@ -94,4 +134,12 @@ export function isCommittee(role: UserRole | null | undefined): boolean {
 
 export function isAuthorized(role: UserRole | null | undefined): boolean {
   return role === 'admin' || role === 'committee';
+}
+
+export function isMember(role: UserRole | null | undefined): boolean {
+  return role === 'member';
+}
+
+export function hasAnyRole(role: UserRole | null | undefined): boolean {
+  return role === 'admin' || role === 'committee' || role === 'member';
 }
