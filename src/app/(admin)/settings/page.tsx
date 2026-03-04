@@ -14,6 +14,9 @@ import {
   HiOutlineGlobeAlt,
   HiOutlineCreditCard,
   HiOutlineUserGroup,
+  HiOutlineEnvelope,
+  HiOutlinePlus,
+  HiOutlineTrash,
 } from 'react-icons/hi2';
 import { FaSquare, FaPaypal, FaCcVisa, FaCcMastercard, FaCcAmex } from 'react-icons/fa6';
 
@@ -60,6 +63,10 @@ export default function SettingsPage() {
   });
   const [savingMembership, setSavingMembership] = useState(false);
 
+  // Email categories state
+  const [emailCategories, setEmailCategories] = useState<{ name: string; email: string }[]>([]);
+  const [savingCategories, setSavingCategories] = useState(false);
+
   // Load existing settings on mount
   useEffect(() => {
     (async () => {
@@ -83,6 +90,10 @@ export default function SettingsPage() {
           setMembershipSettings({
             yearlyCost: s['membership_yearly_cost'] || '',
           });
+          try {
+            const cats = JSON.parse(s['email_categories'] || '[]');
+            if (Array.isArray(cats)) setEmailCategories(cats);
+          } catch { /* ignore */ }
         }
       } catch {
         // Settings may not exist yet
@@ -169,6 +180,28 @@ export default function SettingsPage() {
       toast.error('Failed to save membership settings');
     } finally {
       setSavingMembership(false);
+    }
+  };
+
+  const saveEmailCategories = async () => {
+    setSavingCategories(true);
+    try {
+      const res = await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          settings: {
+            email_categories: JSON.stringify(emailCategories.filter((c) => c.name || c.email)),
+          },
+        }),
+      });
+      const json = await res.json();
+      if (json.success) toast.success('Email categories saved');
+      else toast.error(json.error || 'Failed to save');
+    } catch {
+      toast.error('Failed to save email categories');
+    } finally {
+      setSavingCategories(false);
     }
   };
 
@@ -319,6 +352,64 @@ export default function SettingsPage() {
               </button>
             )}
           </form>
+        </div>
+
+        {/* Email Categories */}
+        <div className="card p-6">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+            <HiOutlineEnvelope className="w-5 h-5" /> Email Categories
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Define email categories with associated Gmail addresses. These are used as &quot;From&quot; addresses when composing emails and for tagging events.
+          </p>
+          <div className="space-y-3">
+            {emailCategories.map((cat, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <input
+                  type="text"
+                  value={cat.name}
+                  onChange={(e) => {
+                    const updated = [...emailCategories];
+                    updated[i] = { ...updated[i], name: e.target.value };
+                    setEmailCategories(updated);
+                  }}
+                  className="input flex-1"
+                  placeholder="Category name"
+                />
+                <input
+                  type="email"
+                  value={cat.email}
+                  onChange={(e) => {
+                    const updated = [...emailCategories];
+                    updated[i] = { ...updated[i], email: e.target.value };
+                    setEmailCategories(updated);
+                  }}
+                  className="input flex-1"
+                  placeholder="email@example.com"
+                />
+                <button
+                  type="button"
+                  onClick={() => setEmailCategories(emailCategories.filter((_, j) => j !== i))}
+                  className="p-2 text-gray-400 hover:text-red-600 rounded"
+                  title="Remove"
+                >
+                  <HiOutlineTrash className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setEmailCategories([...emailCategories, { name: '', email: '' }])}
+              className="btn-secondary text-sm flex items-center gap-1"
+            >
+              <HiOutlinePlus className="w-4 h-4" /> Add Category
+            </button>
+            {isAdmin && (
+              <button onClick={saveEmailCategories} disabled={savingCategories} className="btn-primary">
+                {savingCategories ? 'Saving...' : 'Save Email Categories'}
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Membership Settings */}
