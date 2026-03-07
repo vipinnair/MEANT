@@ -1,6 +1,6 @@
 /**
  * Converts a Prisma result object to Record<string, string>.
- * This preserves the contract the service layer expects (same shape as google-sheets.ts).
+ * This preserves the contract the service layer expects (Record<string, string>).
  */
 export function toStringRecord(obj: Record<string, unknown>): Record<string, string> {
   const result: Record<string, string> = {};
@@ -9,8 +9,6 @@ export function toStringRecord(obj: Record<string, unknown>): Record<string, str
       result[key] = '';
     } else if (value instanceof Date) {
       result[key] = value.toISOString();
-    } else if (typeof value === 'object' && Array.isArray(value)) {
-      result[key] = value.join(',');
     } else if (typeof value === 'object') {
       result[key] = JSON.stringify(value);
     } else if (typeof value === 'number') {
