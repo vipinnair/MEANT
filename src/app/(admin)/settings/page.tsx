@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import PageHeader from '@/components/ui/PageHeader';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
@@ -21,8 +21,21 @@ import {
   HiOutlineTrash,
   HiOutlinePencilSquare,
   HiOutlineShieldCheck,
+  HiOutlinePhoto,
 } from 'react-icons/hi2';
 import { FaSquare, FaPaypal, FaCcVisa, FaCcMastercard, FaCcAmex } from 'react-icons/fa6';
+
+const CATEGORY_BG_COLORS: { value: string; label: string; preview: string }[] = [
+  { value: '', label: 'Default (Slate)', preview: 'bg-gradient-to-br from-slate-700 via-slate-800 to-slate-900' },
+  { value: 'purple', label: 'Purple', preview: 'bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600' },
+  { value: 'blue', label: 'Blue', preview: 'bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800' },
+  { value: 'teal', label: 'Teal', preview: 'bg-gradient-to-br from-teal-600 via-teal-700 to-cyan-800' },
+  { value: 'emerald', label: 'Emerald', preview: 'bg-gradient-to-br from-emerald-600 via-emerald-700 to-green-800' },
+  { value: 'rose', label: 'Rose', preview: 'bg-gradient-to-br from-rose-500 via-rose-600 to-pink-700' },
+  { value: 'amber', label: 'Amber', preview: 'bg-gradient-to-br from-amber-600 via-orange-600 to-orange-700' },
+  { value: 'indigo', label: 'Indigo', preview: 'bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800' },
+  { value: 'cyan', label: 'Cyan', preview: 'bg-gradient-to-br from-cyan-600 via-cyan-700 to-sky-800' },
+];
 
 export default function SettingsPage() {
   const { data: session } = useSession();
@@ -69,8 +82,9 @@ export default function SettingsPage() {
   const [savingMembership, setSavingMembership] = useState(false);
 
   // Email categories state
-  const [emailCategories, setEmailCategories] = useState<{ name: string; email: string }[]>([]);
+  const [emailCategories, setEmailCategories] = useState<{ name: string; email: string; logoUrl?: string; bgColor?: string }[]>([]);
   const [savingCategories, setSavingCategories] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState<number | null>(null);
 
   // Committee members state
   type CommitteeMember = { email: string; name: string; role: string; designation: string };
@@ -81,6 +95,19 @@ export default function SettingsPage() {
   const [savingMember, setSavingMember] = useState(false);
   const [committeeErrors, setCommitteeErrors] = useState<Record<string, string | null>>({});
 
+  // Snapshot of loaded values to detect changes
+  const initialSocialLinks = useRef({ instagram: '', facebook: '', linkedin: '', youtube: '' });
+  const initialFeeSettings = useRef({ squareFeePercent: '', squareFeeFixed: '', paypalFeePercent: '', paypalFeeFixed: '' });
+  const initialMembershipTypes = useRef<{ name: string; price: string }[]>([]);
+  const initialRequiredApprovals = useRef('3');
+  const initialEmailCategories = useRef<{ name: string; email: string; logoUrl?: string; bgColor?: string }[]>([]);
+
+  const socialChanged = JSON.stringify(socialLinks) !== JSON.stringify(initialSocialLinks.current);
+  const feeChanged = JSON.stringify(feeSettings) !== JSON.stringify(initialFeeSettings.current);
+  const membershipChanged = JSON.stringify(membershipTypes) !== JSON.stringify(initialMembershipTypes.current)
+    || requiredApprovals !== initialRequiredApprovals.current;
+  const categoriesChanged = JSON.stringify(emailCategories) !== JSON.stringify(initialEmailCategories.current);
+
   // Load existing settings on mount
   useEffect(() => {
     (async () => {
@@ -89,28 +116,42 @@ export default function SettingsPage() {
         const json = await res.json();
         if (json.success && json.data) {
           const s = json.data as Record<string, string>;
-          setSocialLinks({
+          const loadedSocial = {
             instagram: s['social_instagram'] || '',
             facebook: s['social_facebook'] || '',
             linkedin: s['social_linkedin'] || '',
             youtube: s['social_youtube'] || '',
-          });
-          setFeeSettings({
+          };
+          setSocialLinks(loadedSocial);
+          initialSocialLinks.current = loadedSocial;
+
+          const loadedFees = {
             squareFeePercent: s['fee_square_percent'] || '',
             squareFeeFixed: s['fee_square_fixed'] || '',
             paypalFeePercent: s['fee_paypal_percent'] || '',
             paypalFeeFixed: s['fee_paypal_fixed'] || '',
-          });
+          };
+          setFeeSettings(loadedFees);
+          initialFeeSettings.current = loadedFees;
+
           try {
             const types = JSON.parse(s['membership_types'] || '[]');
             if (Array.isArray(types) && types.length > 0) {
-              setMembershipTypes(types.map((t: { name: string; price: number }) => ({ name: t.name, price: String(t.price) })));
+              const mapped = types.map((t: { name: string; price: number }) => ({ name: t.name, price: String(t.price) }));
+              setMembershipTypes(mapped);
+              initialMembershipTypes.current = mapped;
             }
           } catch { /* ignore */ }
-          setRequiredApprovals(s['membership_required_approvals'] || '3');
+          const loadedApprovals = s['membership_required_approvals'] || '3';
+          setRequiredApprovals(loadedApprovals);
+          initialRequiredApprovals.current = loadedApprovals;
+
           try {
             const cats = JSON.parse(s['email_categories'] || '[]');
-            if (Array.isArray(cats)) setEmailCategories(cats);
+            if (Array.isArray(cats)) {
+              setEmailCategories(cats);
+              initialEmailCategories.current = cats;
+            }
           } catch { /* ignore */ }
         }
       } catch {
@@ -150,8 +191,10 @@ export default function SettingsPage() {
         }),
       });
       const json = await res.json();
-      if (json.success) toast.success('Social media links saved');
-      else toast.error(json.error || 'Failed to save');
+      if (json.success) {
+        toast.success('Social media links saved');
+        initialSocialLinks.current = { ...socialLinks };
+      } else toast.error(json.error || 'Failed to save');
     } catch {
       toast.error('Failed to save social media links');
     } finally {
@@ -176,8 +219,10 @@ export default function SettingsPage() {
         }),
       });
       const json = await res.json();
-      if (json.success) toast.success('Credit card fee settings saved');
-      else toast.error(json.error || 'Failed to save');
+      if (json.success) {
+        toast.success('Credit card fee settings saved');
+        initialFeeSettings.current = { ...feeSettings };
+      } else toast.error(json.error || 'Failed to save');
     } catch {
       toast.error('Failed to save fee settings');
     } finally {
@@ -203,8 +248,11 @@ export default function SettingsPage() {
         }),
       });
       const json = await res.json();
-      if (json.success) toast.success('Membership settings saved');
-      else toast.error(json.error || 'Failed to save');
+      if (json.success) {
+        toast.success('Membership settings saved');
+        initialMembershipTypes.current = [...membershipTypes];
+        initialRequiredApprovals.current = requiredApprovals;
+      } else toast.error(json.error || 'Failed to save');
     } catch {
       toast.error('Failed to save membership settings');
     } finally {
@@ -225,13 +273,46 @@ export default function SettingsPage() {
         }),
       });
       const json = await res.json();
-      if (json.success) toast.success('Email categories saved');
-      else toast.error(json.error || 'Failed to save');
+      if (json.success) {
+        toast.success('Event categories saved');
+        initialEmailCategories.current = [...emailCategories];
+      } else toast.error(json.error || 'Failed to save');
     } catch {
-      toast.error('Failed to save email categories');
+      toast.error('Failed to save event categories');
     } finally {
       setSavingCategories(false);
     }
+  };
+
+  const handleLogoUpload = async (index: number, file: File) => {
+    setUploadingLogo(index);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const oldLogoUrl = emailCategories[index].logoUrl;
+      if (oldLogoUrl) formData.append('oldLogoUrl', oldLogoUrl);
+
+      const res = await fetch('/api/upload/category-logo', { method: 'POST', body: formData });
+      const json = await res.json();
+      if (json.success) {
+        const updated = [...emailCategories];
+        updated[index] = { ...updated[index], logoUrl: json.data.webViewLink };
+        setEmailCategories(updated);
+        toast.success('Logo uploaded');
+      } else {
+        toast.error(json.error || 'Failed to upload logo');
+      }
+    } catch {
+      toast.error('Failed to upload logo');
+    } finally {
+      setUploadingLogo(null);
+    }
+  };
+
+  const removeLogo = (index: number) => {
+    const updated = [...emailCategories];
+    updated[index] = { ...updated[index], logoUrl: undefined };
+    setEmailCategories(updated);
   };
 
   const addCommitteeMember = async () => {
@@ -673,7 +754,7 @@ export default function SettingsPage() {
                 </p>
               </div>
               {isAdmin && (
-                <button type="submit" disabled={savingMembership} className="btn-primary">
+                <button type="submit" disabled={savingMembership || !membershipChanged} className="btn-primary">
                   {savingMembership ? 'Saving...' : 'Save Membership Settings'}
                 </button>
               )}
@@ -745,72 +826,147 @@ export default function SettingsPage() {
               <FieldError error={fieldErrors.youtube} />
             </div>
             {isAdmin && (
-              <button type="submit" disabled={savingSocial} className="btn-primary">
+              <button type="submit" disabled={savingSocial || !socialChanged} className="btn-primary">
                 {savingSocial ? 'Saving...' : 'Save Social Links'}
               </button>
             )}
           </form>
         </div>
 
-        {/* Email Categories */}
+        {/* Event Categories */}
         <div className="card p-6">
           <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
-            <HiOutlineEnvelope className="w-5 h-5" /> Email Categories
+            <HiOutlineEnvelope className="w-5 h-5" /> Event Categories
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
             Define email categories with associated Gmail addresses. These are used as &quot;From&quot; addresses when composing emails and for tagging events.
           </p>
           <div className="space-y-3">
             {emailCategories.map((cat, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={cat.name}
-                  onChange={(e) => {
-                    const updated = [...emailCategories];
-                    updated[i] = { ...updated[i], name: e.target.value };
-                    setEmailCategories(updated);
-                  }}
-                  className="input flex-1"
-                  placeholder="Category name"
-                  disabled={!isAdmin}
-                />
-                <input
-                  type="email"
-                  value={cat.email}
-                  onChange={(e) => {
-                    const updated = [...emailCategories];
-                    updated[i] = { ...updated[i], email: e.target.value };
-                    setEmailCategories(updated);
-                  }}
-                  className="input flex-1"
-                  placeholder="email@example.com"
-                  disabled={!isAdmin}
-                />
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => setEmailCategories(emailCategories.filter((_, j) => j !== i))}
-                    className="p-2 text-gray-400 hover:text-red-600 rounded"
-                    title="Remove"
-                  >
-                    <HiOutlineTrash className="w-4 h-4" />
-                  </button>
-                )}
+              <div key={i} className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={cat.name}
+                    onChange={(e) => {
+                      const updated = [...emailCategories];
+                      updated[i] = { ...updated[i], name: e.target.value };
+                      setEmailCategories(updated);
+                    }}
+                    className="input flex-1"
+                    placeholder="Category name"
+                    disabled={!isAdmin}
+                  />
+                  <input
+                    type="email"
+                    value={cat.email}
+                    onChange={(e) => {
+                      const updated = [...emailCategories];
+                      updated[i] = { ...updated[i], email: e.target.value };
+                      setEmailCategories(updated);
+                    }}
+                    className="input flex-1"
+                    placeholder="email@example.com"
+                    disabled={!isAdmin}
+                  />
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setEmailCategories(emailCategories.filter((_, j) => j !== i))}
+                      className="p-2 text-gray-400 hover:text-red-600 rounded"
+                      title="Remove"
+                    >
+                      <HiOutlineTrash className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                {/* Logo upload */}
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded border border-gray-200 dark:border-gray-600 overflow-hidden flex-shrink-0 flex items-center justify-center bg-white dark:bg-gray-800">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={cat.logoUrl || '/logo.png'}
+                      alt={`${cat.name || 'Category'} logo`}
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-2">
+                      <label className="btn-secondary text-xs py-1.5 px-3 cursor-pointer flex items-center gap-1">
+                        <HiOutlinePhoto className="w-3.5 h-3.5" />
+                        {uploadingLogo === i ? 'Uploading...' : 'Upload Logo'}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml"
+                          className="hidden"
+                          disabled={uploadingLogo === i}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleLogoUpload(i, file);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                      {cat.logoUrl && (
+                        <button
+                          type="button"
+                          onClick={() => removeLogo(i)}
+                          className="text-xs text-gray-400 hover:text-red-600"
+                          title="Remove logo (reverts to default)"
+                        >
+                          Remove
+                        </button>
+                      )}
+                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                        {cat.logoUrl ? 'Custom logo' : 'Using default logo'}
+                      </span>
+                    </div>
+                  )}
+                  {!isAdmin && (
+                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                      {cat.logoUrl ? 'Custom logo' : 'Default logo'}
+                    </span>
+                  )}
+                </div>
+                {/* Background color picker */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-gray-500 dark:text-gray-400 mr-1">Event Background:</span>
+                  {CATEGORY_BG_COLORS.map((color) => (
+                    <button
+                      key={color.value}
+                      type="button"
+                      disabled={!isAdmin}
+                      onClick={() => {
+                        const updated = [...emailCategories];
+                        updated[i] = { ...updated[i], bgColor: color.value || undefined };
+                        setEmailCategories(updated);
+                      }}
+                      className={`w-7 h-7 rounded-lg ${color.preview} border-2 transition-all ${
+                        (cat.bgColor || '') === color.value
+                          ? 'border-primary-500 ring-2 ring-primary-300 scale-110'
+                          : 'border-gray-300 dark:border-gray-500 hover:scale-105'
+                      }`}
+                      title={color.label}
+                    />
+                  ))}
+                  <span className="text-[10px] text-gray-400 dark:text-gray-500 ml-1">
+                    {CATEGORY_BG_COLORS.find((c) => c.value === (cat.bgColor || ''))?.label || 'Default (Slate)'}
+                  </span>
+                </div>
               </div>
             ))}
             {isAdmin && (
               <button
                 type="button"
-                onClick={() => setEmailCategories([...emailCategories, { name: '', email: '' }])}
+                onClick={() => setEmailCategories([...emailCategories, { name: '', email: '', logoUrl: undefined }])}
                 className="btn-secondary text-sm flex items-center gap-1"
               >
                 <HiOutlinePlus className="w-4 h-4" /> Add Category
               </button>
             )}
             {isAdmin && (
-              <button onClick={saveEmailCategories} disabled={savingCategories} className="btn-primary">
-                {savingCategories ? 'Saving...' : 'Save Email Categories'}
+              <button onClick={saveEmailCategories} disabled={savingCategories || !categoriesChanged} className="btn-primary">
+                {savingCategories ? 'Saving...' : 'Save Event Categories'}
               </button>
             )}
           </div>
@@ -897,7 +1053,7 @@ export default function SettingsPage() {
               </div>
             </div>
             {isAdmin && (
-              <button type="submit" disabled={savingFees} className="btn-primary">
+              <button type="submit" disabled={savingFees || !feeChanged} className="btn-primary">
                 {savingFees ? 'Saving...' : 'Save Fee Settings'}
               </button>
             )}
